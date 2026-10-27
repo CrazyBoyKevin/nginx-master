@@ -40,7 +40,7 @@ func getNginxUser() string {
 func init() {
 	var err error
 
-	if err = os.MkdirAll(pkg.CfgBase, 0o644); err != nil {
+	if err = os.MkdirAll(pkg.CfgBase, 0o755); err != nil {
 		panic(fmt.Sprintf("failed to create [ %s ] directory: %v", pkg.CfgBase, err))
 	}
 
@@ -79,6 +79,10 @@ func main() {
 	webHttpFs := http.FileServer(http.FS(webFs))
 
 	router.Use(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, pkg.ACMEChallengePrefix) {
+			c.Next()
+			return
+		}
 		if len(c.Request.URL.Path) >= 5 && c.Request.URL.Path[:5] == "/api/" {
 			c.Next()
 			return
@@ -92,6 +96,8 @@ func main() {
 
 	router.POST("/api/v1/login", ctl.Login)
 	router.POST("/api/v1/logout", ctl.Logout)
+	router.GET(pkg.ACMEChallengePrefix+":token", gin.WrapF(pkg.ServeACMEChallenge))
+	router.HEAD(pkg.ACMEChallengePrefix+":token", gin.WrapF(pkg.ServeACMEChallenge))
 
 	apiRouter := router.Group("/api/v1/")
 	apiRouter.Use(pkg.AuthMiddleWare)
@@ -103,6 +109,10 @@ func main() {
 	apiRouter.POST("/list_cert", ctl.ListCert)
 	apiRouter.POST("/save_cert", ctl.SaveCert)
 	apiRouter.POST("/del_cert", ctl.DelCert)
+	apiRouter.POST("/issue_cert", ctl.IssueCert)
+	apiRouter.POST("/renew_cert", ctl.RenewCert)
+	apiRouter.POST("/prepare_acme_dns", ctl.PrepareACMEDNS)
+	apiRouter.POST("/check_acme_dns", ctl.CheckACMEDNS)
 
 	apiRouter.POST("/set_auth", ctl.SetAuth)
 	apiRouter.POST("/nginx_status", ctl.NginxStatus)

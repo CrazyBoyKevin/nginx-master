@@ -12,6 +12,11 @@ import (
 )
 
 func NginxReload() (string, error) {
+	// A successful reload signal alone does not prove Nginx accepted the files.
+	check := exec.Command(NginxBin, "-t", "-c", NginxConfFile)
+	if output, err := check.CombinedOutput(); err != nil {
+		return string(output), fmt.Errorf("failed to verify nginx config: %w", err)
+	}
 	// 创建一个 exec.Command 来执行 nginx -s reload 命令
 	cmd := exec.Command(NginxBin, "-s", "reload", "-c", NginxConfFile)
 	// 使用 CombinedOutput 方法来运行命令，并获取输出和错误信息

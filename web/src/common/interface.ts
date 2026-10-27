@@ -109,8 +109,37 @@ export interface CertConfig {
   keyRaw: string;
   pemPath: string;
   keyPath: string;
+  acme?: {
+    email: string;
+    domains: string[];
+    staging: boolean;
+    challengeType?: ACMEChallengeType;
+    dnsServiceURL?: string;
+  };
 }
 
 export enum CertType {
   Custom = "custom",
+  LetsEncrypt = "letsencrypt",
+}
+
+export interface ACMERequest {
+  id: string;
+  name: string;
+  email: string;
+  domains: string[];
+  staging: boolean;
+  acceptTerms: boolean;
+  challengeType: ACMEChallengeType;
+  dnsServiceURL?: string;
+}
+
+export type ACMEChallengeType = "http-01" | "dns-01";
+
+export interface ACMEDelegation {
+  domain: string;
+  name: string;
+  target: string;
+  verified: boolean;
+  message: string;
 }

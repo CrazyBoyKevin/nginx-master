@@ -3,6 +3,7 @@ import { useColumns } from "./useColumns";
 import { openCertModal } from "./openCertModal";
 import { useCertList } from "@/common/useList";
 import { useState, useMemo } from "react";
+import { openACMECertModal } from "./openACMECertModal";
 
 export default function () {
   const { sortedList, loading, error, mutate } = useCertList();
@@ -34,6 +35,19 @@ export default function () {
           }}
         >
           新建证书
+        </Button>
+        <Button
+          type="primary"
+          onClick={async () => {
+            try {
+              const { certConfig } = await openACMECertModal({});
+              if (certConfig) mutate((s) => [...(s ?? []), certConfig]);
+            } catch {
+              /* Modal dismissed. */
+            }
+          }}
+        >
+          申请 Let's Encrypt
         </Button>
         <Input
           className="!w-40"

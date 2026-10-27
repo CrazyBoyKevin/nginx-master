@@ -1,15 +1,22 @@
 package pkg
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
+var certFilesMu sync.RWMutex
+
 func ListCert() (list []map[string]any, err error) {
-	if err = os.MkdirAll(CertDir, 0o644); err != nil {
-		panic(fmt.Sprintf("failed to create [Cert] directory: %v", err))
+	certFilesMu.RLock()
+	defer certFilesMu.RUnlock()
+	if err = os.MkdirAll(CertDir, 0o755); err != nil {
+		return nil, fmt.Errorf("failed to create [Cert] directory: %v", err)
 	}
 
 	list = []map[string]any{}
@@ -51,29 +58,77 @@ func PathCert(id string) (certPemPath, certKeyPath, certConfigPath string) {
 }
 
 func SaveCert(id string, certConfig any, certPemRaw, certKeyRaw string) (output string, err error) {
+	if !IsValidId(id) {
+		return "", errors.New("Invalid id")
+	}
+	if !certMutationMu.TryLock() {
+		return "", errors.New("有证书操作正在进行，请完成后再试")
+	}
+	defer certMutationMu.Unlock()
+	if certConfig != nil {
+		_, _, path := PathCert(id)
+		data, readErr := os.ReadFile(path)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return "", readErr
+		}
+		if readErr == nil {
+			var saved struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal(data, &saved); err != nil {
+				return "", err
+			}
+			if saved.Type == CertTypeLetsEncrypt {
+				return "", errors.New("Let's Encrypt 证书请使用一键续签，不能手动覆盖")
+			}
+		}
+	}
+	return saveCert(id, certConfig, certPemRaw, certKeyRaw)
+}
+
+func saveCert(id string, certConfig any, certPemRaw, certKeyRaw string) (output string, err error) {
+	certFilesMu.Lock()
+	defer certFilesMu.Unlock()
+	if certConfig != nil {
+		if _, err := tls.X509KeyPair([]byte(certPemRaw), []byte(certKeyRaw)); err != nil {
+			return "证书或私钥无效", err
+		}
+	}
 	certPemPath, certKeyPath, certConfigPath := PathCert(id)
 
 	certPemBak, certPemBakErr := os.ReadFile(certPemPath)
 	certKeyBak, certKeyBakErr := os.ReadFile(certKeyPath)
 	certConfigBak, certConfigBakErr := os.ReadFile(certConfigPath)
+	for _, readErr := range []error{certPemBakErr, certKeyBakErr, certConfigBakErr} {
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return "读取原证书失败", readErr
+		}
+	}
 
 	var done = false
 	defer func() {
 		if !done {
-			if certPemBakErr == nil {
-				WriteFile(certPemPath, certPemBak)
-			} else if os.IsNotExist(certPemBakErr) {
-				os.Remove(certPemPath)
-			}
-			if certKeyBakErr == nil {
-				WriteFile(certKeyPath, certKeyBak)
-			} else if os.IsNotExist(certKeyBakErr) {
-				os.Remove(certKeyPath)
-			}
-			if certConfigBakErr == nil {
-				WriteFile(certConfigPath, certConfigBak)
-			} else if os.IsNotExist(certConfigBakErr) {
-				os.Remove(certConfigPath)
+			for _, backup := range []struct {
+				path    string
+				data    []byte
+				readErr error
+			}{
+				{certPemPath, certPemBak, certPemBakErr},
+				{certKeyPath, certKeyBak, certKeyBakErr},
+				{certConfigPath, certConfigBak, certConfigBakErr},
+			} {
+				var restoreErr error
+				if backup.readErr == nil {
+					restoreErr = writePrivateFile(backup.path, backup.data)
+				} else {
+					restoreErr = os.Remove(backup.path)
+					if os.IsNotExist(restoreErr) {
+						restoreErr = nil
+					}
+				}
+				if restoreErr != nil {
+					err = errors.Join(err, fmt.Errorf("恢复证书文件 %s 失败：%w", backup.path, restoreErr))
+				}
 			}
 		}
 	}()
@@ -85,17 +140,17 @@ func SaveCert(id string, certConfig any, certPemRaw, certKeyRaw string) (output 
 			output = "marshal certConfig failed"
 			return
 		}
-		err = WriteFile(certConfigPath, certConfigJSON)
+		err = writePrivateFile(certConfigPath, certConfigJSON)
 		if err != nil {
 			output = "write certConfigJSON failed, path: " + certConfigPath
 			return
 		}
-		err = WriteFile(certPemPath, []byte(certPemRaw))
+		err = writePrivateFile(certPemPath, []byte(certPemRaw))
 		if err != nil {
 			output = "write certPemRaw failed, path: " + certPemPath
 			return
 		}
-		err = WriteFile(certKeyPath, []byte(certKeyRaw))
+		err = writePrivateFile(certKeyPath, []byte(certKeyRaw))
 		if err != nil {
 			output = "write certKeyRaw failed, path: " + certKeyPath
 			return

@@ -72,6 +72,8 @@ func SaveCert(c *gin.Context) {
 	}
 
 	certPemPath, certKeyPath, _ := pkg.PathCert(id)
+	requestBody["type"] = "custom"
+	delete(requestBody, "acme")
 	requestBody["pemPath"] = certPemPath
 	requestBody["keyPath"] = certKeyPath
 
@@ -79,7 +81,7 @@ func SaveCert(c *gin.Context) {
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"output": output,
-			"err":    "SaveCert Failed",
+			"err":    err.Error(),
 		})
 		return
 	}
@@ -114,7 +116,7 @@ func DelCert(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
-			"err":    "SaveCert Failed",
+			"err":    err.Error(),
 			"output": output,
 		})
 		return
@@ -122,4 +124,54 @@ func DelCert(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"output": output,
 	})
+}
+
+func IssueCert(c *gin.Context) {
+	var req pkg.ACMERequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"err": "Invalid JSON"})
+		return
+	}
+	config, output, err := pkg.IssueACMECert(c.Request.Context(), req, false)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"err": err.Error(), "output": output})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"certConfig": config, "output": output})
+}
+
+func RenewCert(c *gin.Context) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"err": "Invalid JSON"})
+		return
+	}
+	config, output, err := pkg.IssueACMECert(c.Request.Context(), pkg.ACMERequest{ID: req.ID}, true)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"err": err.Error(), "output": output})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"certConfig": config, "output": output})
+}
+
+func PrepareACMEDNS(c *gin.Context) { acmeDNSRecords(c, true) }
+func CheckACMEDNS(c *gin.Context)   { acmeDNSRecords(c, false) }
+
+func acmeDNSRecords(c *gin.Context, prepare bool) {
+	var req struct {
+		DNSServiceURL string   `json:"dnsServiceURL"`
+		Domains       []string `json:"domains"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"err": "Invalid JSON"})
+		return
+	}
+	records, err := pkg.ACMEDelegations(c.Request.Context(), req.DNSServiceURL, req.Domains, prepare)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"err": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"records": records})
 }

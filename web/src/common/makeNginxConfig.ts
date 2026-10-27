@@ -31,7 +31,7 @@ export const makeNginxServerConfig = (c: ServerConfig) => {
     }
     cmd.push(`ssl_protocols TLSv1 TLSv1.1 TLSv1.2 TLSv1.3;`);
     if (c.sslForceEn) {
-      cmd.push(`if ($scheme = http) {`);
+      cmd.push(`if ($nginx_master_https_redirect) {`);
       cmd.push(
         `\treturn 301 https://$host${
           c.sslPorts[0] ? `:${c.sslPorts[0]}` : ""
@@ -65,6 +65,17 @@ export const makeNginxServerConfig = (c: ServerConfig) => {
     cmd.push("");
     c.nginxRaw.split("\n").forEach((r) => cmd.push(r));
   }
+
+  // Reserved route: bypass proxy/static/regex locations and HTTPS redirects.
+  cmd.push(`
+location ^~ /.well-known/acme-challenge/ {
+\tproxy_pass http://127.0.0.1:9999;
+\tproxy_set_header Host $host;
+\tproxy_cache off;
+\tauth_basic off;
+\tallow all;
+\taccess_log off;
+}`);
 
   c.locations.forEach((cl) => {
     cmd.push("");

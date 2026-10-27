@@ -8,7 +8,7 @@ import (
 )
 
 func WriteFile(path string, content []byte) error {
-	err := os.MkdirAll(filepath.Dir(path), 0o644)
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err != nil {
 		return err
 	}
@@ -25,6 +25,26 @@ func WriteFile(path string, content []byte) error {
 		return err
 	}
 	return nil
+}
+
+// Atomically replace secrets with owner-only permissions, including existing files.
+func writePrivateFile(path string, content []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(filepath.Dir(path), ".secret-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.Write(content); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 // 从指定位置，读取到最后一个 \n 为止, 剩余没有 \n 的部分，留着之后读取

@@ -1,4 +1,9 @@
-import { type CertConfig, type ServerConfig } from "@/common/interface";
+import {
+  type ACMEDelegation,
+  type ACMERequest,
+  type CertConfig,
+  type ServerConfig,
+} from "@/common/interface";
 import { Message } from "@arco-design/web-react";
 
 const baseUrl = "/api/v1";
@@ -75,6 +80,33 @@ export const request = {
     return await customFetch<{ err?: string; output: string }>(
       `${baseUrl}/del_cert`,
       { id }
+    );
+  },
+
+  IssueCert: async (params: ACMERequest) => {
+    return await customFetch<{
+      err?: string;
+      output: string;
+      certConfig?: CertConfig;
+    }>(`${baseUrl}/issue_cert`, params);
+  },
+
+  RenewCert: async (id: string) => {
+    return await customFetch<{
+      err?: string;
+      output: string;
+      certConfig?: CertConfig;
+    }>(`${baseUrl}/renew_cert`, { id });
+  },
+
+  ACMEDelegations: async (
+    dnsServiceURL: string,
+    domains: string[],
+    prepare = false
+  ) => {
+    return await customFetch<{ err?: string; records?: ACMEDelegation[] }>(
+      `${baseUrl}/${prepare ? "prepare" : "check"}_acme_dns`,
+      { dnsServiceURL, domains }
     );
   },
 

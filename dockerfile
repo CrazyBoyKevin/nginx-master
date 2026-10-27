@@ -10,6 +10,8 @@ run go build -o /nginx_master_app .
 # from nginx:stable-alpine
 from nginx:stable-alpine-perl
 
+run apk add --no-cache ca-certificates
+
 env NGINX_MASTER_BASE=/nginx_master_data
 copy --chmod=755 --from=builder /nginx_master_app /nginx_master_app
 volume /nginx_master_data
